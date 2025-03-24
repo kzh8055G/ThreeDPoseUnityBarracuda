@@ -3,6 +3,10 @@ using UnityEngine.UI;
 using System.Collections;
 using System.Collections.Generic;
 using Unity.Barracuda;
+using UnityEngine.AddressableAssets;
+using UniRx;
+using Cysharp.Threading.Tasks;
+using UniRx.Triggers;
 
 /// <summary>
 /// Define Joint points
@@ -133,7 +137,7 @@ public class VNectBarracudaRunner : MonoBehaviour
     public float LowPassParam;
 
     public Text Msg;
-    public float WaitTimeModelLoad = 10f;
+    public float WaitTimeModelLoad = 0f;
     private float Countdown = 0;
     public Texture2D InitImg;
 
@@ -158,20 +162,35 @@ public class VNectBarracudaRunner : MonoBehaviour
         // Disabel sleep
         Screen.sleepTimeout = SleepTimeout.NeverSleep;
 
+        // UniTask
+            
+        if(NNModel == null)
+        {
+            Addressables.LoadAssetAsync<NNModel>("Resnet34_3inputs_448x448_20200609")
+                .ToUniTask()
+                .ToObservable()
+                .Subscribe(model =>
+                {
+                    NNModel = model;
+                    _OnNNModelReady();
+                });
+        }
+        else
+        {
+            _OnNNModelReady();
+        }
+
+        this.UpdateAsObservable()
+            .Where(_ => !Lock)
+            .Subscribe(_ => UpdateVNectModel());
+    }
+
+    private void _OnNNModelReady()
+    {
         // Init model
         _model = ModelLoader.Load(NNModel, Verbose);
         _worker = WorkerFactory.CreateWorker(WorkerType, _model, Verbose);
-
-        StartCoroutine("WaitLoad");
-
-    }
-
-    private void Update()
-    {
-        if (!Lock)
-        {
-            UpdateVNectModel();
-        }
+        StartCoroutine(WaitLoad());
     }
 
     private IEnumerator WaitLoad()
